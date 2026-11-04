@@ -173,6 +173,7 @@ async function adminApi(request, env, url) {
       if(name==='banners') data.id=data.id||id('ban_'); if(name==='popups') data.id=data.id||id('pop_');
       const fields=cfg.fields.filter(f=>data[f]!==undefined), cols=['id',...fields], vals=[data.id,...fields.map(f=>data[f])];
       await run(env,`INSERT INTO ${cfg.table}(${cols.join(',')}) VALUES(${cols.map(()=>'?').join(',')})`,...vals);
+      if(name==='products'&&Array.isArray(data.gallery_media_ids)){let order=0;for(const mediaId of data.gallery_media_ids){if(!mediaId)continue;await run(env,'INSERT OR IGNORE INTO product_images(id,product_id,media_id,sort_order,is_primary) VALUES(?,?,?,?,?)',id('pimg_'),data.id,String(mediaId),order++,0);}}
       return json({ok:true,id:data.id},201);
     }
     const prefix=base+'/'; if(path.startsWith(prefix) && (method==='PATCH'||method==='DELETE')) {
@@ -180,6 +181,7 @@ async function adminApi(request, env, url) {
       if(method==='DELETE') { if(name==='categories'){ await run(env,'UPDATE products SET category_id=NULL,updated_at=CURRENT_TIMESTAMP WHERE category_id=?',rid); await run(env,'UPDATE categories SET active=0,updated_at=CURRENT_TIMESTAMP WHERE id=?',rid); } else { await run(env,`UPDATE ${cfg.table} SET active=0 WHERE id=?`,rid); } return json({ok:true}); }
       const b=await parse(request), fields=cfg.fields.filter(f=>b[f]!==undefined); if(!fields.length) return json({ok:true});
       await run(env,`UPDATE ${cfg.table} SET ${fields.map(f=>`${f}=?`).join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=?`,...fields.map(f=>b[f]),rid).catch(async()=>run(env,`UPDATE ${cfg.table} SET ${fields.map(f=>`${f}=?`).join(',')} WHERE id=?`,...fields.map(f=>b[f]),rid));
+      if(name==='products'&&Array.isArray(b.gallery_media_ids)){await run(env,'DELETE FROM product_images WHERE product_id=? AND is_primary=0',rid);let order=0;for(const mediaId of b.gallery_media_ids){if(!mediaId)continue;await run(env,'INSERT OR IGNORE INTO product_images(id,product_id,media_id,sort_order,is_primary) VALUES(?,?,?,?,?)',id('pimg_'),rid,String(mediaId),order++,0);}}
       return json({ok:true});
     }
   }
