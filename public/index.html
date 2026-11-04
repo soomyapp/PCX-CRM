@@ -711,9 +711,9 @@ $("year").textContent=new Date().getFullYear();renderProducts();renderCart();
    const response=await fetch(API+'/api/catalog',{headers:{'Accept':'application/json'}});
    if(!response.ok)throw new Error('API '+response.status);
    const data=await response.json();
-   if(Array.isArray(data.products)&&data.products.length){
+   if(Array.isArray(data.products)){
     products=data.products.map(p=>({id:p.id,name:p.name,category:p.category_name||'Sin asignar',price:Number(p.price),popularity:p.featured?99:75,tag:p.featured?'DESTACADO':'',desc:p.description||'',longDesc:p.description||'',img:p.image_url||'',video_url:p.video_url||'',variants:(p.category_name==='Iluminación LED'?['Luz cálida','Luz fría','RGB / multicolor']:['Estándar','Consultar disponibilidad'])}));
-    const filter=$('categoryFilter');if(filter){const current=filter.value;filter.innerHTML='<option value="all">Todas las categorías</option>'+data.categories.map(c=>`<option value="${c.name}">${c.name}</option>`).join('');if([...filter.options].some(o=>o.value===current))filter.value=current}
+    const filter=$('categoryFilter');if(filter){const current=filter.value;filter.innerHTML='<option value="all">Todas las categorías</option>'+data.categories.map(c=>`<option value="${c.name}">${c.name}</option>`).join('');if([...filter.options].some(o=>o.value===current))filter.value=current}document.querySelectorAll('[data-category-link]').forEach(card=>{const category=data.categories.find(x=>x.name===card.dataset.categoryLink);const icon=card.querySelector('.cat-icon');if(category?.image_url&&icon){icon.innerHTML=`<img src="${category.image_url}" alt="" loading="lazy" decoding="async" style="width:100%;height:100%;max-height:84px;object-fit:cover;border-radius:12px">`;}})
     renderProducts();renderCart();
    }
    renderCampaigns(data);
