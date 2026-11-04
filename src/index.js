@@ -93,12 +93,16 @@ async function publicApi(request, env, url) {
     return json({ok:true,service:'pcx-crm-api',database:'ok',products:db?.products||0,media:bucket,time:now()});
   }
   if (url.pathname==='/api/catalog' && request.method==='GET') {
-    const categories=await all(env,'SELECT * FROM categories WHERE active=1 ORDER BY sort_order,name');
+    const categories=await all(env,`SELECT c.*,COALESCE(m.public_url,c.image_url) AS image_url,m.content_type AS image_content_type FROM categories c LEFT JOIN media_assets m ON m.id=c.media_id WHERE c.active=1 ORDER BY c.sort_order,c.name`);
     const products=await all(env,`SELECT p.*,c.name AS category_name FROM products p LEFT JOIN categories c ON c.id=p.category_id WHERE p.active=1 ORDER BY p.featured DESC,p.created_at DESC`);
-    const bannersAll=await all(env,`SELECT b.*,m.public_url AS image,m.content_type FROM banners b LEFT JOIN media_assets m ON m.id=b.media_id WHERE b.active=1 ORDER BY b.sort_order`);
-    const popupsAll=await all(env,`SELECT p.*,m.public_url AS image,m.content_type FROM popups p LEFT JOIN media_assets m ON m.id=p.media_id WHERE p.active=1`);
-    const banners=bannersAll.filter(x=>inWindow(x.starts_at,x.ends_at)), popups=popupsAll.filter(x=>inWindow(x.starts_at,x.ends_at));
-    return json({categories,products:products.map(p=>({...p,price:p.price_cents/100,image:p.image_url})),banners,popups});
+    const productMedia=await all(env,`SELECT pi.product_id,pi.sort_order,pi.is_primary,m.id AS media_id,m.public_url,m.content_type,m.filename FROM product_images pi JOIN media_assets m ON m.id=pi.media_id ORDER BY pi.product_id,pi.is_primary DESC,pi.sort_order ASC`);
+    const mediaByProduct=new Map(); for(const item of productMedia){if(!mediaByProduct.has(item.product_id))mediaByProduct.set(item.product_id,[]);mediaByProduct.get(item.product_id).push({id:item.media_id,url:item.public_url,type:String(item.content_type||'').startsWith('video/')?'video':'image',filename:item.filename,sort_order:item.sort_order,is_primary:!!item.is_primary});}
+    const bannersAll=await all(env,`SELECT b.*,m.public_url AS image,m.content_type AS image_content_type FROM banners b LEFT JOIN media_assets m ON m.id=b.media_id WHERE b.active=1 ORDER BY b.sort_order`);
+    const popupsAll=await all(env,`SELECT p.*,m.public_url AS image,m.content_type AS image_content_type FROM popups p LEFT JOIN media_assets m ON m.id=p.media_id WHERE p.active=1`);
+    const normalizePosition=v=>{const x=String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase();if(x.includes('hero')||x.includes('portada')||x==='home')return 'hero';if(x.includes('categor'))return 'category';if(x.includes('popup')||x.includes('pop-out')||x.includes('emergente'))return 'popup';return 'promotion';};
+    const banners=bannersAll.filter(x=>inWindow(x.starts_at,x.ends_at)).map(x=>({...x,position:normalizePosition(x.position),image_url:x.image||null,media_type:String(x.image_content_type||'').startsWith('video/')?'video':x.video_url?'video':'image'}));
+    const popups=popupsAll.filter(x=>inWindow(x.starts_at,x.ends_at)).map(x=>({...x,image_url:x.image||null}));
+    return json({categories,products:products.map(p=>{const gallery=mediaByProduct.get(p.id)||[];return {...p,price:p.price_cents/100,image:p.image_url,image_url:p.image_url,images:gallery,media:[...(p.image_url?[{url:p.image_url,type:'image',is_primary:true}]:[]),...(p.video_url?[{url:p.video_url,type:'video'}]:[]),...gallery]};}),banners,popups});
   }
   if (url.pathname==='/api/coupons/validate' && request.method==='POST') {
     const b=await parse(request), code=String(b.code||'').trim().toUpperCase(), subtotal=Math.max(0,safeInt(b.subtotal_cents));
@@ -156,7 +160,9 @@ async function adminApi(request, env, url) {
     const base='/api/admin/'+name;
     if(path===base && method==='GET') {
       let sql=`SELECT * FROM ${cfg.table} ORDER BY ${cfg.order}`;
-      if(name==='banners'||name==='popups') sql=`SELECT x.*,m.public_url AS image FROM ${cfg.table} x LEFT JOIN media_assets m ON m.id=x.media_id ORDER BY x.${name==='banners'?'sort_order':'created_at'} ${name==='banners'?'ASC':'DESC'}`;
+      if(name==='categories') sql=`SELECT c.*,COALESCE(m.public_url,c.image_url) AS image_url,m.content_type AS image_content_type FROM categories c LEFT JOIN media_assets m ON m.id=c.media_id ORDER BY c.sort_order,c.name`;
+      if(name==='banners'||name==='popups') sql=`SELECT x.*,m.public_url AS image,m.content_type AS image_content_type FROM ${cfg.table} x LEFT JOIN media_assets m ON m.id=x.media_id ORDER BY x.${name==='banners'?'sort_order':'created_at'} ${name==='banners'?'ASC':'DESC'}`;
+      if(name==='products') { const rows=await all(env,sql); const gallery=await all(env,`SELECT pi.product_id,pi.sort_order,pi.is_primary,m.id AS media_id,m.public_url,m.content_type,m.filename FROM product_images pi JOIN media_assets m ON m.id=pi.media_id ORDER BY pi.product_id,pi.is_primary DESC,pi.sort_order ASC`); const byProduct=new Map(); for(const item of gallery){if(!byProduct.has(item.product_id))byProduct.set(item.product_id,[]);byProduct.get(item.product_id).push({id:item.media_id,url:item.public_url,type:String(item.content_type||'').startsWith('video/')?'video':'image',sort_order:item.sort_order,is_primary:!!item.is_primary});} return json(rows.map(p=>({...p,images:byProduct.get(p.id)||[]}))); }
       return json(await all(env,sql));
     }
     if(path===base && method==='POST') {
