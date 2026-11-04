@@ -1,7 +1,7 @@
 # pcx-cloudflare — PCX CRM (repositorio oficial)
 
-**Nombre corto y permanente del repositorio/carpeta: `pcx-cloudflare`.**
-Usa siempre `~/pcx-cloudflare` en Termux. No cambies este nombre en futuras entregas ni scripts.
+**Repositorio oficial: `soomyapp/PCX-CRM`. Carpeta de trabajo recomendada: `pcx-cloudflare`.**
+Usa siempre `~/pcx-cloudflare` en Termux; conserva ese nombre de carpeta.
 
 This repository contains the storefront, the standalone admin panel, and the Worker API source. It is configured for the existing Cloudflare resources:
 
@@ -15,7 +15,8 @@ This repository contains the storefront, the standalone admin panel, and the Wor
 - `public/index.html` — storefront and embedded CRM entry.
 - `public/crm-admin.html` — standalone CRM admin.
 - `src/index.js` — Cloudflare Worker API.
-- `migrations/0001_schema.sql` — D1 schema (safe `CREATE TABLE IF NOT EXISTS`).
+- `migrations/0001_schema.sql` — initial D1 schema.
+- `migrations/0002_client_access_code_slots.sql` — three encrypted access-code slots.
 - `wrangler.jsonc` — Worker, D1 and R2 bindings.
 - `.github/workflows/deploy-cloudflare.yml` — deploy Worker and Pages after pushes to `main`.
 
@@ -32,7 +33,7 @@ bash ./pcx-deploy.sh github
 bash ./pcx-deploy.sh local
 ```
 
-El modo GitHub comprueba la rama `main`, bloquea el remoto antiguo `soomyapp/CMX-CMR`, valida el código y publica a `origin/main`. No inventa ni configura un remoto: conecta `origin` al nuevo repositorio GitHub llamado `pcx-cloudflare`.
+El modo GitHub comprueba la rama `main`, bloquea el remoto antiguo `soomyapp/CMX-CMR`, valida el código y publica a `origin/main`. No inventa ni configura un remoto: `origin` debe apuntar a `https://github.com/soomyapp/PCX-CRM.git`.
 
 **Carpeta canónica en Termux:** `~/pcx-cloudflare`. Extrae el ZIP dentro de esa carpeta y conserva `.git`.
 
