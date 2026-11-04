@@ -42,7 +42,7 @@ In the GitHub repository, open **Settings → Secrets and variables → Actions*
 
 1. `CLOUDFLARE_API_TOKEN` — token with Workers Scripts: Edit, D1: Edit, R2 Storage: Edit, and Cloudflare Pages: Edit permissions for this account. The account ID is already configured in `wrangler.jsonc`.
 
-Configura `CLOUDFLARE_API_TOKEN` una sola vez y conecta `origin` al repositorio nuevo `pcx-cloudflare`, en la rama `main`. Ejecuta `bash ./pcx-deploy.sh github`. GitHub Actions then validates the Worker JavaScript, deploys `pcx-crm-api`, and deploys the `public/` directory to the existing Pages project `corporacionpcx`.
+Configura `CLOUDFLARE_API_TOKEN` una sola vez y conecta `origin` al repositorio oficial https://github.com/soomyapp/PCX-CRM.git, en la rama main. Ejecuta `bash ./pcx-deploy.sh github`. GitHub Actions then validates the Worker JavaScript, deploys `pcx-crm-api`, and deploys the `public/` directory to the existing Pages project `corporacionpcx`.
 
 ## First-time/manual deployment
 
@@ -58,11 +58,15 @@ npm run deploy
 
 `DEVELOPER_KEY` must be set as a Cloudflare Worker secret. Do not put it in Git, HTML, `wrangler.jsonc`, or GitHub variables. When deploying over the existing Worker, an already configured Worker secret remains managed by Cloudflare; verify it in Worker Settings → Variables and Secrets.
 
-The existing D1 database already has the schema and initial catalog. The migration uses `IF NOT EXISTS` and is safe to apply to that database; it does not delete existing rows. Do not create a new database unless intentionally migrating data.
+The existing D1 database contains the current schema and catalog. Migrations are additive and preserve existing business rows. 0002_client_access_code_slots.sql adds the three encrypted access-code slots. Do not create a new database unless intentionally migrating data.
 
-## Admin access
+## Admin and client access codes
 
-Open `https://corporacionpcx.pages.dev/?panel=crm` or `/crm-admin.html`. The initial client access code was supplied separately in a private handoff file; it is deliberately not committed to this repository. The Worker stores only its SHA-256 hash in D1. Access sessions expire after 12 hours. Use the developer secret only for generating/revoking client access codes.
+Open https://corporacionpcx.pages.dev/crm-admin.html. In Configuración → Tres códigos de acceso de clientes, the developer can manage exactly three fixed slots (Cliente 1, 2 and 3). Each active code is generated as eight numeric digits. Replacing a slot revokes its previous code; each slot can also be revoked independently.
+
+The management API requires the Cloudflare Worker secret DEVELOPER_KEY in the X-Developer-Key header. The panel asks for this secret for each operation and does not save it in HTML or browser storage. D1 stores a SHA-256 hash for login validation and an AES-GCM encrypted copy for authorized recovery. The AES key is derived from DEVELOPER_KEY; do not rotate that secret unless you are prepared to replace all three codes, because old encrypted codes will no longer be recoverable. Keep the secret only in Cloudflare Worker Secrets.
+
+Once all three new slots are active, the API deactivates legacy access-code rows that do not belong to a slot. New codes use the same login scope as the existing CRM: all three can enter the current administrative panel and have the same permissions. They are not separate restricted customer roles. Admin sessions expire after 12 hours.
 
 ## Verification
 
@@ -78,6 +82,6 @@ Expected: `/api/health` returns JSON with `ok: true`, database status, product c
 ## Important deployment notes
 
 - This is test-mode handoff. Do not treat test orders as real sales or connect payment capture without a separate payment-provider integration and explicit approval.
-- The GitHub Actions workflow deploys both the Worker and Pages. It requires the `CLOUDFLARE_API_TOKEN` GitHub Actions secret above.
+- The GitHub Actions workflow validates pull requests and, after a push to main, applies pending D1 migrations before deploying the Worker and Pages. It requires the CLOUDFLARE_API_TOKEN GitHub Actions secret above.
 - The backend uses the existing D1/R2 resource identifiers and the frontend already points to the existing Worker URL.
 - No credentials, developer secret, or initial access code are included in the repository.
