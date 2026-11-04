@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pcx-crm-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-03",
+  "workers_dev": true,
+  "vars": {
+    "PUBLIC_API_URL": "https://pcx-crm-api.lcreativo.workers.dev",
+    "ENVIRONMENT": "production"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pcx-crm-db",
+      "database_id": "53ffd641-c0f2-4ac7-a9ad-3de00dbe901a",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "pcx-crm-media"
+    }
+  ],
+  "account_id": "05e674fc45a138f7ed24df356d6e1571"
+}

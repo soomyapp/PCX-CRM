@@ -1,0 +1,34 @@
+name: Deploy PCX CRM to Cloudflare
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run check
+      - name: Apply D1 migrations (safe, create-if-missing)
+        run: npx wrangler d1 migrations apply pcx-crm-db --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Deploy Worker API
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Deploy Pages frontend
+        run: npx wrangler pages deploy public --project-name=corporacionpcx
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Smoke test API
+        run: |
+          curl --fail --silent --show-error https://pcx-crm-api.lcreativo.workers.dev/api/health | tee /tmp/health.json
+          node -e "const x=require('/tmp/health.json'); if(!x.ok || x.database!=='ok' || x.media!=='ok') process.exit(1)"
+          curl --fail --silent --show-error https://pcx-crm-api.lcreativo.workers.dev/api/catalog | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const x=JSON.parse(s);if(!Array.isArray(x.products)||!Array.isArray(x.categories))process.exit(1);console.log('catalog smoke test OK')})"
