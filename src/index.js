@@ -2,6 +2,29 @@ const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(d
 const now = () => new Date().toISOString();
 const id = (prefix='') => prefix + crypto.randomUUID();
 const sha256 = async (s) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(x=>x.toString(16).padStart(2,'0')).join('');
+const accessCodeKey = async (secret) => {
+  if (!secret) throw new Error('Falta configurar DEVELOPER_KEY en el Worker.');
+  const material = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('pcx-access-codes-v1:' + secret));
+  return crypto.subtle.importKey('raw', material, {name:'AES-GCM'}, false, ['encrypt','decrypt']);
+};
+const bytesToBase64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+const base64ToBytes = value => Uint8Array.from(atob(value), c=>c.charCodeAt(0));
+const encryptAccessCode = async (code, secret) => {
+  const iv=crypto.getRandomValues(new Uint8Array(12)), key=await accessCodeKey(secret);
+  const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(code));
+  return {code_ciphertext:bytesToBase64(ciphertext),code_iv:bytesToBase64(iv)};
+};
+const decryptAccessCode = async (ciphertext, iv, secret) => {
+  const key=await accessCodeKey(secret);
+  const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:base64ToBytes(iv)},key,base64ToBytes(ciphertext));
+  return new TextDecoder().decode(plain);
+};
+const generateEightDigitCode = () => {
+  const limit=Math.floor(0x100000000/90000000)*90000000;
+  let value;
+  do { const sample=new Uint32Array(1); crypto.getRandomValues(sample); value=sample[0]; } while(value>=limit);
+  return String(10000000+(value%90000000));
+};
 const slug = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || crypto.randomUUID();
 const safeInt = (v, d=0) => Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : d;
 const inWindow = (start, end) => { const t=Date.now(); const bound=(v,isEnd)=>{ if(!v)return null; const x=String(v); return Date.parse(x.length===10 ? `${x}T${isEnd?'23:59:59.999':'00:00:00.000'}Z` : x); }; const a=bound(start,false), b=bound(end,true); return (a===null||!Number.isNaN(a)&&a<=t) && (b===null||!Number.isNaN(b)&&b>=t); };
@@ -171,11 +194,44 @@ async function adminApi(request, env, url) {
   }
   if(path.startsWith('/api/admin/media/') && method==='PATCH') { const b=await parse(request); await run(env,'UPDATE media_assets SET category_id=? WHERE id=?',b.category_id||null,decodeURIComponent(path.split('/').pop())); return json({ok:true}); }
   if(path.startsWith('/api/admin/media/') && method==='DELETE') { const mid=decodeURIComponent(path.split('/').pop()), m=await first(env,'SELECT object_key FROM media_assets WHERE id=?',mid); await run(env,'UPDATE banners SET media_id=NULL WHERE media_id=?',mid); await run(env,'UPDATE popups SET media_id=NULL WHERE media_id=?',mid); await run(env,'UPDATE categories SET media_id=NULL WHERE media_id=?',mid); await run(env,'DELETE FROM product_images WHERE media_id=?',mid); if(m) await env.MEDIA.delete(m.object_key); await run(env,'DELETE FROM media_assets WHERE id=?',mid); return json({ok:true}); }
+  if(path==='/api/admin/access-codes' && method==='GET') {
+    const key=request.headers.get('X-Developer-Key')||'';
+    if(!env.DEVELOPER_KEY||key!==env.DEVELOPER_KEY) return json({error:'No autorizado.'},403);
+    const rows=await all(env,'SELECT id,slot,label,code_ciphertext,code_iv,created_at FROM access_codes WHERE active=1 AND slot BETWEEN 1 AND 3 ORDER BY slot');
+    const slots=[];
+    for(let slot=1;slot<=3;slot++) {
+      const row=rows.find(x=>x.slot===slot);
+      let code=null;
+      if(row?.code_ciphertext&&row?.code_iv) {
+        try { code=await decryptAccessCode(row.code_ciphertext,row.code_iv,env.DEVELOPER_KEY); }
+        catch { return json({error:'No se pudo recuperar un código. Comprueba que DEVELOPER_KEY no haya cambiado desde su creación.'},500); }
+      }
+      slots.push({slot,id:row?.id||null,label:row?.label||('Cliente '+slot),code,created_at:row?.created_at||null,active:!!row});
+    }
+    return json({slots});
+  }
   if(path==='/api/admin/access-codes' && method==='POST') {
-    const key=request.headers.get('X-Developer-Key')||''; if(!env.DEVELOPER_KEY||key!==env.DEVELOPER_KEY) return json({error:'No autorizado.'},403);
-    const b=await parse(request), code='PCX-'+crypto.randomUUID().replaceAll('-','').slice(0,20).toUpperCase(), cid=id('access_');
-    await run(env,'INSERT INTO access_codes(id,code_hash,label,active,expires_at) VALUES(?,?,?,1,?)',cid,await sha256(code),String(b.label||'Acceso CRM'),b.expires_at||null);
-    return json({id:cid,access_code:code},201);
+    const key=request.headers.get('X-Developer-Key')||'';
+    if(!env.DEVELOPER_KEY||key!==env.DEVELOPER_KEY) return json({error:'No autorizado.'},403);
+    const b=await parse(request), slot=Number(b.slot);
+    if(!Number.isInteger(slot)||slot<1||slot>3) return json({error:'El espacio debe ser 1, 2 o 3.'},400);
+    const code=generateEightDigitCode(), cid=id('access_'), label='Cliente '+slot;
+    const encrypted=await encryptAccessCode(code,env.DEVELOPER_KEY);
+    await env.DB.batch([
+      stmt(env,'UPDATE access_codes SET active=0,revoked_at=CURRENT_TIMESTAMP WHERE slot=? AND active=1',slot),
+      stmt(env,'INSERT INTO access_codes(id,code_hash,label,active,expires_at,slot,code_ciphertext,code_iv) VALUES(?,?,?,1,NULL,?,?,?)',cid,await sha256(code),label,slot,encrypted.code_ciphertext,encrypted.code_iv)
+    ]);
+    const active=await first(env,'SELECT COUNT(DISTINCT slot) AS n FROM access_codes WHERE active=1 AND slot BETWEEN 1 AND 3');
+    if((active?.n||0)>=3) await run(env,'UPDATE access_codes SET active=0,revoked_at=CURRENT_TIMESTAMP WHERE slot IS NULL AND active=1');
+    return json({id:cid,slot,access_code:code},201);
+  }
+  if(path.startsWith('/api/admin/access-codes/slot/') && path.endsWith('/revoke') && method==='POST') {
+    const key=request.headers.get('X-Developer-Key')||'';
+    if(!env.DEVELOPER_KEY||key!==env.DEVELOPER_KEY) return json({error:'No autorizado.'},403);
+    const slot=Number(path.split('/').slice(-2)[0]);
+    if(!Number.isInteger(slot)||slot<1||slot>3) return json({error:'Espacio inválido.'},400);
+    await run(env,'UPDATE access_codes SET active=0,revoked_at=CURRENT_TIMESTAMP WHERE slot=? AND active=1',slot);
+    return json({ok:true,slot});
   }
   if(path.startsWith('/api/admin/access-codes/') && path.endsWith('/revoke') && method==='POST') {
     const key=request.headers.get('X-Developer-Key')||''; if(!env.DEVELOPER_KEY||key!==env.DEVELOPER_KEY) return json({error:'No autorizado.'},403);
