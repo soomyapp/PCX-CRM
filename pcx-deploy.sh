@@ -21,8 +21,33 @@ if [[ "$MODE" == github ]]; then
   BRANCH="$(git branch --show-current)"
   [[ "$BRANCH" == main ]] || die "La rama actual es '$BRANCH'. Cambia a main antes de publicar."
   REMOTE="$(git remote get-url origin 2>/dev/null || true)"
-  [[ -n "$REMOTE" ]] || die "No existe origin. Configura origin al nuevo repositorio GitHub pcx-cloudflare."
-  if printf '%s' "$REMOTE" | grep -qiE 'soomyapp/CMX-CMR'; then die "Remoto antiguo bloqueado: soomyapp/CMX-CMR. Configura el nuevo repositorio pcx-cloudflare."; fi
+  [[ -n "$REMOTE" ]] || die "No existe origin. Configura origin a https://github.com/soomyapp/PCX-CRM.git."
+  if printf '%s' "$REMOTE" | grep -qiE 'soomyapp/CMX-CMR'; then die "Remoto antiguo bloqueado: soomyapp/CMX-CMR."; fi
+  printf '%s' "$REMOTE" | grep -qiE 'soomyapp/PCX-CRM(\.git)?
+  say "Preparando cambios para GitHub..."
+  git add -A
+  if ! git diff --cached --quiet; then
+    git -c user.name="PCX Deploy" -c user.email="pcx-deploy@users.noreply.github.com" commit -m "Deploy PCX CRM"
+  else say "No hay cambios nuevos para confirmar."; fi
+  say "Publicando en GitHub..."
+  git push -u origin main
+  say "Código enviado al repositorio oficial soomyapp/PCX-CRM. GitHub Actions desplegará Worker y Pages automáticamente."
+  say "Configura una sola vez CLOUDFLARE_API_TOKEN en GitHub > Settings > Secrets and variables > Actions."
+  exit 0
+fi
+say "Comprobando sesión Cloudflare..."
+if ! npx wrangler whoami >/dev/null 2>&1; then npx wrangler login; fi
+say "Aplicando migraciones D1 (no elimina filas existentes)..."
+npx wrangler d1 migrations apply pcx-crm-db --remote
+say "Desplegando Worker..."
+npx wrangler deploy
+say "Desplegando Pages..."
+npx wrangler pages deploy public --project-name=corporacionpcx
+say "Comprobando API..."
+curl --fail --silent --show-error https://pcx-crm-api.lcreativo.workers.dev/api/health
+printf '\n'
+say "Despliegue local completado."
+ || die "El remoto origin no es el repositorio oficial soomyapp/PCX-CRM."
   say "Preparando cambios para GitHub..."
   git add -A
   if ! git diff --cached --quiet; then
