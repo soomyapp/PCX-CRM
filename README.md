@@ -86,3 +86,8 @@ Expected: `/api/health` returns JSON with `ok: true`, database status, product c
 - The GitHub Actions workflow validates pull requests and, after a push to main, applies pending D1 migrations before deploying the Worker and Pages. It requires the CLOUDFLARE_API_TOKEN GitHub Actions secret above.
 - The backend uses the existing D1/R2 resource identifiers and the frontend already points to the existing Worker URL.
 - No credentials, developer secret, or initial access code are included in the repository.
+
+
+## Sincronización del escaparate
+
+El escaparate público consume `GET /api/catalog` como fuente única de productos, categorías, galerías multimedia, banners y ventanas emergentes. El catálogo se actualiza al cargar la página y cada 30 segundos. Los productos sin publicar (`active=0`) no se muestran. Las campañas se ubican según su posición configurada en el CRM.
