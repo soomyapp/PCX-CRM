@@ -35,7 +35,7 @@ const first = async (env, sql, ...args) => await stmt(env,sql,...args).first();
 const run = async (env, sql, ...args) => await stmt(env,sql,...args).run();
 function corsHeaders(request) {
   const origin = request.headers.get('Origin') || '';
-  const allowed = origin === 'https://corporacionpcx.pages.dev' || origin === 'https://corporacionpcx.com' || origin.endsWith('.pages.dev') || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  const allowed = origin === 'https://corporacionpcx.pages.dev' || origin === 'https://corporacionpcx.com' || origin === 'https://www.corporacionpcx.com' || /^https:\/\/[a-z0-9-]+\.corporacionpcx\.pages\.dev$/i.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
   return { 'access-control-allow-origin': allowed ? origin : 'https://corporacionpcx.pages.dev', 'vary':'Origin', 'access-control-allow-methods':'GET,POST,PATCH,DELETE,OPTIONS', 'access-control-allow-headers':'Content-Type,Authorization,X-File-Name,X-Category-ID,X-Developer-Key', 'access-control-max-age':'86400' };
 }
 const mediaUrl = (env, key) => `${env.PUBLIC_API_URL || 'https://pcx-crm-api.lcreativo.workers.dev'}/media/${key}`;
@@ -201,7 +201,7 @@ async function adminApi(request, env, url) {
     return json({id:mediaId,object_key:key,url:urlMedia,public_url:urlMedia,filename:fileName,content_type:type,size_bytes:body.byteLength,category_id:categoryId},201);
   }
   if(path.startsWith('/api/admin/media/') && method==='PATCH') { const b=await parse(request); await run(env,'UPDATE media_assets SET category_id=? WHERE id=?',b.category_id||null,decodeURIComponent(path.split('/').pop())); return json({ok:true}); }
-  if(path.startsWith('/api/admin/media/') && method==='DELETE') { const mid=decodeURIComponent(path.split('/').pop()), m=await first(env,'SELECT object_key FROM media_assets WHERE id=?',mid); await run(env,'UPDATE banners SET media_id=NULL WHERE media_id=?',mid); await run(env,'UPDATE popups SET media_id=NULL WHERE media_id=?',mid); await run(env,'UPDATE categories SET media_id=NULL WHERE media_id=?',mid); await run(env,'DELETE FROM product_images WHERE media_id=?',mid); if(m) await env.MEDIA.delete(m.object_key); await run(env,'DELETE FROM media_assets WHERE id=?',mid); return json({ok:true}); }
+  if(path.startsWith('/api/admin/media/') && method==='DELETE') { const mid=decodeURIComponent(path.split('/').pop()), m=await first(env,'SELECT object_key,public_url FROM media_assets WHERE id=?',mid); if(m?.public_url) { await run(env,'UPDATE products SET image_url=NULL,updated_at=CURRENT_TIMESTAMP WHERE image_url=?',m.public_url); await run(env,'UPDATE products SET video_url=NULL,updated_at=CURRENT_TIMESTAMP WHERE video_url=?',m.public_url); await run(env,'UPDATE categories SET image_url=NULL,updated_at=CURRENT_TIMESTAMP WHERE image_url=?',m.public_url); await run(env,'UPDATE banners SET video_url=NULL WHERE video_url=?',m.public_url); await run(env,'UPDATE popups SET video_url=NULL WHERE video_url=?',m.public_url); } await run(env,'UPDATE banners SET media_id=NULL WHERE media_id=?',mid); await run(env,'UPDATE popups SET media_id=NULL WHERE media_id=?',mid); await run(env,'UPDATE categories SET media_id=NULL WHERE media_id=?',mid); await run(env,'DELETE FROM product_images WHERE media_id=?',mid); if(m) await env.MEDIA.delete(m.object_key); await run(env,'DELETE FROM media_assets WHERE id=?',mid); return json({ok:true}); }
   if(path==='/api/admin/access-codes' && method==='GET') {
     const key=request.headers.get('X-Developer-Key')||'';
     if(!env.DEVELOPER_KEY||key!==env.DEVELOPER_KEY) return json({error:'No autorizado.'},403);
@@ -260,6 +260,6 @@ export default {
    const pub=await publicApi(request,env,url); if(pub) { const h=new Headers(pub.headers); for(const [k,v] of Object.entries(cors)) h.set(k,v); return new Response(pub.body,{status:pub.status,headers:h}); }
    const admin=await adminApi(request,env,url); if(admin) { const h=new Headers(admin.headers); for(const [k,v] of Object.entries(cors)) h.set(k,v); return new Response(admin.body,{status:admin.status,headers:h}); }
    return json({error:'Ruta no encontrada.'},404,cors);
-  } catch(e) { return json({error:'Error interno del servicio.',detail:env.ENVIRONMENT==='development'?String(e.message):undefined},500,cors); }
+  } catch(e) { console.error(JSON.stringify({event:'pcx_api_error',path:new URL(request.url).pathname,method:request.method,message:String(e?.message||e)})); return json({error:'Error interno del servicio.',detail:env.ENVIRONMENT==='development'?String(e.message):undefined},500,cors); }
  }
 };
