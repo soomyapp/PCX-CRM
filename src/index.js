@@ -217,7 +217,7 @@ async function adminApi(request, env, url) {
   if(path==='/api/admin/media' && method==='POST') {
     const type=request.headers.get('Content-Type')||'application/octet-stream', fileName=decodeURIComponent(request.headers.get('X-File-Name')||'archivo'), categoryId=request.headers.get('X-Category-ID')||null;
     const body=await request.arrayBuffer(); if(body.byteLength>20*1024*1024) return json({error:'Máximo 20 MB.'},413);
-    const allowed=['image/jpeg','image/png','image/webp','image/gif','image/avif','video/mp4','video/webm','application/pdf']; if(!allowed.includes(type)) return json({error:'Tipo de archivo no permitido.'},415);
+    const allowed=['image/jpeg','image/png','image/webp','image/gif','image/avif','image/svg+xml','video/mp4','video/webm','application/pdf']; if(!allowed.includes(type)) return json({error:'Tipo de archivo no permitido.'},415);
     const key=`${new Date().toISOString().slice(0,10)}/${crypto.randomUUID()}-${fileName.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
     await env.MEDIA.put(key,body,{httpMetadata:{contentType:type}}); const urlMedia=mediaUrl(env,key), mediaId=id('med_');
     await run(env,'INSERT INTO media_assets(id,object_key,public_url,filename,content_type,size_bytes,category_id) VALUES(?,?,?,?,?,?,?)',mediaId,key,urlMedia,fileName,type,body.byteLength,categoryId);
