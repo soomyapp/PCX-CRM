@@ -168,7 +168,30 @@ async function adminApi(request, env, url) {
     if(path===base && method==='POST') {
       const b=await parse(request), data={...b};
       if(name==='products'){data.id=data.id||id('prd_');data.slug=data.slug||slug(data.name);data.price_cents=safeInt(data.price_cents);data.stock_qty=safeInt(data.stock_qty);}
-      if(name==='categories'){data.id=data.id||id('cat_');data.slug=data.slug||slug(data.name);}
+      if(name==='categories') {
+        const categoryName=String(data.name||'').trim();
+        if(!categoryName) return json({error:'El nombre de la categoría es obligatorio.'},400);
+        if(categoryName.length>60) return json({error:'El nombre no puede superar 60 caracteres.'},400);
+        const baseSlug=slug(data.slug||categoryName);
+        const existing=await first(env,'SELECT id,name,active FROM categories WHERE slug=? COLLATE NOCASE',baseSlug);
+        if(existing) {
+          if(String(existing.name||'').trim().toLowerCase()===categoryName.toLowerCase() && !existing.active) {
+            await run(env,'UPDATE categories SET name=?,description=?,active=1,updated_at=CURRENT_TIMESTAMP WHERE id=?',categoryName,String(data.description||''),existing.id);
+            return json({ok:true,id:existing.id,reactivated:true},200);
+          }
+          if(String(existing.name||'').trim().toLowerCase()===categoryName.toLowerCase() && existing.active)
+            return json({error:'Ya existe una categoría activa con ese nombre.'},409);
+          data.slug=baseSlug+'-'+crypto.randomUUID().slice(0,8);
+        } else data.slug=baseSlug;
+        data.id=data.id||id('cat_'); data.name=categoryName;
+        try {
+          await run(env,'INSERT INTO categories(id,name,slug,description,sort_order,active) VALUES(?,?,?,?,?,?)',data.id,data.name,data.slug,String(data.description||''),safeInt(data.sort_order,0),data.active===undefined?1:(data.active?1:0));
+        } catch(error) {
+          console.error(JSON.stringify({event:'category_create_failed',message:String(error?.message||error),slug:data.slug}));
+          return json({error:'No se pudo crear la categoría. Comprueba que el nombre no esté repetido e inténtalo de nuevo.'},409);
+        }
+        return json({ok:true,id:data.id},201);
+      }
       if(name==='coupons'){data.id=data.id||id('cpn_');data.code=String(data.code||'').toUpperCase();}
       if(name==='banners') data.id=data.id||id('ban_'); if(name==='popups') data.id=data.id||id('pop_');
       const fields=cfg.fields.filter(f=>data[f]!==undefined), cols=['id',...fields], vals=[data.id,...fields.map(f=>data[f])];
