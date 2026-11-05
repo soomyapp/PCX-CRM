@@ -93,7 +93,7 @@ async function publicApi(request, env, url) {
     return json({ok:true,service:'pcx-crm-api',database:'ok',products:db?.products||0,media:bucket,time:now()});
   }
   if (url.pathname==='/api/catalog' && request.method==='GET') {
-    const categories=await all(env,`SELECT c.*,COALESCE(m.public_url,c.image_url) AS image_url,m.content_type AS image_content_type FROM categories c LEFT JOIN media_assets m ON m.id=c.media_id WHERE c.active=1 ORDER BY c.sort_order,c.name`);
+    const categories=await all(env,`SELECT c.*,COALESCE(m.public_url,c.image_url) AS image_url,m.content_type AS image_content_type FROM categories c LEFT JOIN media_assets m ON m.id=COALESCE(c.media_id,(SELECT ma.id FROM media_assets ma WHERE ma.category_id=c.id AND ma.content_type LIKE 'image/%' ORDER BY ma.created_at DESC LIMIT 1)) WHERE c.active=1 ORDER BY c.sort_order,c.name`);
     const products=await all(env,`SELECT p.*,c.name AS category_name FROM products p LEFT JOIN categories c ON c.id=p.category_id WHERE p.active=1 ORDER BY p.featured DESC,p.created_at DESC`);
     const productMedia=await all(env,`SELECT pi.product_id,pi.sort_order,pi.is_primary,m.id AS media_id,m.public_url,m.content_type,m.filename FROM product_images pi JOIN media_assets m ON m.id=pi.media_id ORDER BY pi.product_id,pi.is_primary DESC,pi.sort_order ASC`);
     const mediaByProduct=new Map(); for(const item of productMedia){if(!mediaByProduct.has(item.product_id))mediaByProduct.set(item.product_id,[]);mediaByProduct.get(item.product_id).push({id:item.media_id,url:item.public_url,type:String(item.content_type||'').startsWith('video/')?'video':'image',filename:item.filename,sort_order:item.sort_order,is_primary:!!item.is_primary});}
@@ -160,7 +160,7 @@ async function adminApi(request, env, url) {
     const base='/api/admin/'+name;
     if(path===base && method==='GET') {
       let sql=`SELECT * FROM ${cfg.table} ORDER BY ${cfg.order}`;
-      if(name==='categories') sql=`SELECT c.*,COALESCE(m.public_url,c.image_url) AS image_url,m.content_type AS image_content_type FROM categories c LEFT JOIN media_assets m ON m.id=c.media_id ORDER BY c.sort_order,c.name`;
+      if(name==='categories') sql=`SELECT c.*,COALESCE(m.public_url,c.image_url) AS image_url,m.content_type AS image_content_type FROM categories c LEFT JOIN media_assets m ON m.id=COALESCE(c.media_id,(SELECT ma.id FROM media_assets ma WHERE ma.category_id=c.id AND ma.content_type LIKE 'image/%' ORDER BY ma.created_at DESC LIMIT 1)) ORDER BY c.sort_order,c.name`;
       if(name==='banners'||name==='popups') sql=`SELECT x.*,m.public_url AS image,m.content_type AS image_content_type FROM ${cfg.table} x LEFT JOIN media_assets m ON m.id=x.media_id ORDER BY x.${name==='banners'?'sort_order':'created_at'} ${name==='banners'?'ASC':'DESC'}`;
       if(name==='products') { const rows=await all(env,sql); const gallery=await all(env,`SELECT pi.product_id,pi.sort_order,pi.is_primary,m.id AS media_id,m.public_url,m.content_type,m.filename FROM product_images pi JOIN media_assets m ON m.id=pi.media_id ORDER BY pi.product_id,pi.is_primary DESC,pi.sort_order ASC`); const byProduct=new Map(); for(const item of gallery){if(!byProduct.has(item.product_id))byProduct.set(item.product_id,[]);byProduct.get(item.product_id).push({id:item.media_id,url:item.public_url,type:String(item.content_type||'').startsWith('video/')?'video':'image',sort_order:item.sort_order,is_primary:!!item.is_primary});} return json(rows.map(p=>({...p,images:byProduct.get(p.id)||[]}))); }
       return json(await all(env,sql));
