@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>PCX · Administración de códigos</title>
+<style>
+:root{color-scheme:light;--ink:#202833;--muted:#687482;--line:#dfe5ec;--blue:#1756a9;--bg:#f2f5f8}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top left,#e4edf9,#f2f5f8 60%);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;display:grid;place-items:center;padding:20px}
+main{width:min(680px,100%);background:#fff;border:1px solid var(--line);border-top:5px solid var(--blue);border-radius:18px;padding:clamp(22px,5vw,38px);box-shadow:0 18px 50px #17233118}
+.brand{display:flex;align-items:center;gap:14px;padding-bottom:22px;border-bottom:1px solid #edf0f4}.mark{width:54px;height:54px;border-radius:13px;background:#1756a9;color:white;display:grid;place-items:center;font-weight:900;font-size:20px}.brand b{display:block;letter-spacing:.06em}.brand small{color:var(--muted)}
+h1{font-size:clamp(24px,5vw,32px);letter-spacing:-.04em;margin:24px 0 5px}p{color:var(--muted);margin:0 0 22px}.field label{display:block;font-weight:750;font-size:13px;margin-bottom:7px}.field input{width:100%;border:1px solid #cfd8e2;border-radius:10px;padding:14px;font:inherit;font-size:16px}.field input:focus{outline:3px solid #1756a91b;border-color:var(--blue)}
+button{font:inherit;font-weight:750;border:1px solid #ccd5df;border-radius:9px;padding:11px 15px;background:#fff;color:#354151;cursor:pointer}button.primary{background:var(--blue);border-color:var(--blue);color:white}button.danger{color:#a33b42;border-color:#e8caca}button:disabled{opacity:.55;cursor:wait}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+#panel{margin-top:25px}.slot{border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:12px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.slot h2{font-size:15px;margin:0 0 5px}.code{font:800 22px/1.3 ui-monospace,monospace;letter-spacing:.14em;color:#1756a9;overflow-wrap:anywhere}.muted{font-size:12px;color:var(--muted)}.slot-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.status{padding:12px;border-radius:9px;background:#f3f7fc;color:#44566b;font-size:13px;margin-top:16px;white-space:pre-wrap}.status.error{background:#fff2f1;color:#9c3535}.hidden{display:none!important}.foot{font-size:12px;color:var(--muted);margin-top:22px;border-top:1px solid #edf0f4;padding-top:16px}
+@media(max-width:520px){.slot{grid-template-columns:1fr}.slot-actions{justify-content:flex-start}.slot-actions button{flex:1}.actions button{flex:1}}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><div class="mark">PCX</div><div><b>CORPORACIÓN SERVICIOS PCX</b><small>Administración privada de códigos</small></div></div>
+  <h1>Generar códigos de acceso</h1>
+  <p>Esta página permite administrar los tres códigos de acceso al Centro de Control. Tu clave privada se utiliza solo durante esta sesión y no se guarda en el navegador.</p>
+  <section id="auth">
+    <div class="field"><label for="developerKey">DEVELOPER_KEY de Cloudflare</label><input id="developerKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Introduce tu clave privada"></div>
+    <div class="actions"><button class="primary" id="connect">Verificar clave y consultar códigos</button></div>
+  </section>
+  <section id="panel" class="hidden">
+    <div class="actions"><button id="refresh">Actualizar códigos</button><button id="disconnect">Cerrar sesión</button></div>
+    <div id="slots"></div>
+  </section>
+  <div id="status" class="status hidden" role="status" aria-live="polite"></div>
+  <div class="foot">No compartas tu DEVELOPER_KEY. Los códigos generados son los que debes introducir en la pantalla principal de inicio de sesión de PCX-CRM.</div>
+</main>
+<script>
+'use strict';
+const API='https://pcx-crm-api.lcreativo.workers.dev';
+const keyInput=document.getElementById('developerKey');
+const auth=document.getElementById('auth');
+const panel=document.getElementById('panel');
+const slotsEl=document.getElementById('slots');
+const statusEl=document.getElementById('status');
+let developerKey='';
+function message(text,error=false){statusEl.textContent=text;statusEl.classList.remove('hidden','error');if(error)statusEl.classList.add('error');}
+async function request(path,method='GET',body=null){
+ const headers={'X-Developer-Key':developerKey};
+ const options={method,headers};
+ if(body){headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
+ const response=await fetch(API+path,options);
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw new Error(data.error||'No se pudo completar la operación ('+response.status+').');
+ return data;
+}
+function render(slots){
+ slotsEl.replaceChildren();
+ for(const item of slots||[]){
+  const card=document.createElement('article');card.className='slot';
+  const info=document.createElement('div');
+  const heading=document.createElement('h2');heading.textContent='Espacio '+item.slot+' · Cliente '+item.slot;info.append(heading);
+  if(item.active&&item.code){const code=document.createElement('div');code.className='code';code.textContent=item.code;info.append(code);}
+  else{const empty=document.createElement('div');empty.className='muted';empty.textContent='Sin código activo';info.append(empty);}
+  const controls=document.createElement('div');controls.className='slot-actions';
+  const generate=document.createElement('button');generate.className='primary';generate.textContent=item.active?'Reemplazar':'Generar';
+  generate.addEventListener('click',()=>create(item.slot,item.active));controls.append(generate);
+  if(item.active){const revoke=document.createElement('button');revoke.className='danger';revoke.textContent='Revocar';revoke.addEventListener('click',()=>revokeSlot(item.slot));controls.append(revoke);}
+  card.append(info,controls);slotsEl.append(card);
+ }
+}
+async function load(){const data=await request('/api/admin/access-codes');render(data.slots);message('Clave verificada. Los códigos activos están actualizados.');}
+async function connect(){
+ developerKey=keyInput.value.trim();if(!developerKey){message('Introduce tu DEVELOPER_KEY.',true);return;}
+ const button=document.getElementById('connect');button.disabled=true;
+ try{await load();auth.classList.add('hidden');panel.classList.remove('hidden');keyInput.value='';}
+ catch(e){developerKey='';message(e.message,true);}
+ finally{button.disabled=false;}
+}
+async function create(slot,active){
+ const question=active?'¿Reemplazar el código actual del espacio '+slot+'? El anterior dejará de funcionar.':'¿Generar un código para el espacio '+slot+'?';
+ if(!confirm(question))return;
+ try{const data=await request('/api/admin/access-codes','POST',{slot});await load();message('Código generado para el espacio '+slot+': '+data.access_code+'\nAnótalo ahora y entrégalo a la persona autorizada.');}
+ catch(e){message(e.message,true);}
+}
+async function revokeSlot(slot){
+ if(!confirm('¿Revocar el código del espacio '+slot+'?'))return;
+ try{await request('/api/admin/access-codes/slot/'+slot+'/revoke','POST');await load();message('Código del espacio '+slot+' revocado.');}
+ catch(e){message(e.message,true);}
+}
+function disconnect(){developerKey='';keyInput.value='';slotsEl.replaceChildren();panel.classList.add('hidden');auth.classList.remove('hidden');statusEl.classList.add('hidden');}
+document.getElementById('connect').addEventListener('click',connect);
+keyInput.addEventListener('keydown',e=>{if(e.key==='Enter')connect();});
+document.getElementById('refresh').addEventListener('click',async()=>{try{await load();}catch(e){message(e.message,true);}});
+document.getElementById('disconnect').addEventListener('click',disconnect);
+window.addEventListener('pagehide',()=>{developerKey='';});
+</script>
+</body>
+</html>

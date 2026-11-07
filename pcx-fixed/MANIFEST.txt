@@ -1,0 +1,24 @@
+PCX-CRM — OFFICIAL PROJECT MANIFEST
+Official repository: soomyapp/PCX-CRM
+Recommended local folder: pcx-cloudflare
+
+Project files:
+- .github/workflows/deploy-cloudflare.yml
+- .gitignore
+- API_CONTRACT.md
+- DEPLOYMENT_CHECKLIST.md
+- MANIFEST.txt
+- README.md
+- index.html
+- migrations/0001_schema.sql
+- migrations/0002_client_access_code_slots.sql
+- package.json
+- pcx-deploy.sh
+- public/_headers
+- public/crm-admin.html
+- public/index.html
+- scripts/validate.mjs
+- src/index.js
+- wrangler.jsonc
+
+The repository is the source of truth. Do not treat this inventory as a release checksum list.
